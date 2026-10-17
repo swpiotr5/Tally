@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.schemas import ReceiptRead, ReceiptSummary
+from app.api.schemas import (
+    ReceiptItemRead,
+    ReceiptItemUpdate,
+    ReceiptRead,
+    ReceiptSummary,
+    ReceiptUpdate,
+)
 from app.config import Settings, get_settings
 from app.db import get_session
 from app.extraction import ExtractedReceipt, ExtractionError, ReceiptExtractor, get_extractor
@@ -91,10 +97,51 @@ def list_receipts(session: SessionDep) -> list[ReceiptSummary]:
 
 @router.get("/{receipt_id}", response_model=ReceiptRead)
 def get_receipt(receipt_id: int, session: SessionDep) -> Receipt:
+    return _find_receipt(session, receipt_id)
+
+
+@router.patch("/{receipt_id}", response_model=ReceiptRead)
+def update_receipt(receipt_id: int, update: ReceiptUpdate, session: SessionDep) -> Receipt:
+    """Correct the receipt header: store, NIP, date or total."""
+    receipt = _find_receipt(session, receipt_id)
+    for field, value in update.changes().items():
+        setattr(receipt, field, value)
+    session.commit()
+    return receipt
+
+
+@router.patch("/{receipt_id}/items/{item_id}", response_model=ReceiptItemRead)
+def update_item(
+    receipt_id: int, item_id: int, update: ReceiptItemUpdate, session: SessionDep
+) -> ReceiptItem:
+    """Correct one line item: its name, quantity, prices, discount or category."""
+    item = _find_item(session, receipt_id, item_id)
+    for field, value in update.changes().items():
+        setattr(item, field, value)
+    session.commit()
+    return item
+
+
+@router.delete("/{receipt_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(receipt_id: int, item_id: int, session: SessionDep) -> None:
+    """Remove a line that is not on the receipt, e.g. one the model invented or duplicated."""
+    session.delete(_find_item(session, receipt_id, item_id))
+    session.commit()
+
+
+def _find_receipt(session: Session, receipt_id: int) -> Receipt:
     receipt = session.get(Receipt, receipt_id, options=[selectinload(Receipt.items)])
     if receipt is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Receipt not found.")
     return receipt
+
+
+def _find_item(session: Session, receipt_id: int, item_id: int) -> ReceiptItem:
+    item = session.get(ReceiptItem, item_id)
+    # An item id from another receipt is treated as not found, not silently edited.
+    if item is None or item.receipt_id != receipt_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Item not found.")
+    return item
 
 
 def _to_model(extracted: ExtractedReceipt, image_path: str) -> Receipt:
