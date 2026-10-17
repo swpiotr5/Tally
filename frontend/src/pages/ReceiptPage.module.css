@@ -28,11 +28,45 @@
     0 0 / 24px 12px round no-repeat;
 }
 
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.hint svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.editHeader {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.editHeader svg {
+  width: 20px;
+  height: 20px;
+}
+
 .header {
   display: grid;
   justify-items: center;
   gap: 4px;
-  padding-bottom: 18px;
+  padding: 0 40px 18px;
   border-bottom: 2px dashed var(--rule);
   text-align: center;
 }
@@ -60,12 +94,34 @@
   list-style: none;
 }
 
+/* A whole item is one button that opens its editor. */
 .item {
   display: grid;
   gap: 8px;
-  padding: 14px 0;
+  width: calc(100% + 20px);
+  margin: 0 -10px;
+  padding: 14px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
+button.item:active {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+@media (hover: hover) {
+  button.item:hover {
+    background: color-mix(in srgb, var(--text) 4%, transparent);
+  }
+}
+
+.items > li + li,
 .item + .item {
   border-top: 1px solid var(--rule-soft);
 }

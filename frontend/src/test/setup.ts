@@ -7,6 +7,16 @@ import { afterEach, vi } from 'vitest'
 URL.createObjectURL = vi.fn(() => 'blob:preview')
 URL.revokeObjectURL = vi.fn()
 
+// jsdom has no <dialog> methods. Opening and closing toggle the attribute as browsers do,
+// and closing fires the "close" event that the sheet listens to.
+HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+  this.setAttribute('open', '')
+}
+HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+  this.removeAttribute('open')
+  this.dispatchEvent(new Event('close'))
+}
+
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()

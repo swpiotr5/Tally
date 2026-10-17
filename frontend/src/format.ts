@@ -9,6 +9,15 @@ const shortDate = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'shor
 const longDate = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'long', year: 'numeric' })
 const dateTime = new Intl.DateTimeFormat(LOCALE, { dateStyle: 'medium', timeStyle: 'short' })
 const pluralRules = new Intl.PluralRules(LOCALE)
+const moneyInput = new Intl.NumberFormat(LOCALE, {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  useGrouping: false,
+})
+const quantityInput = new Intl.NumberFormat(LOCALE, {
+  maximumFractionDigits: 3,
+  useGrouping: false,
+})
 
 /** "23.40" -> "23,40 zł" */
 export function formatMoney(amount: string): string {
@@ -34,6 +43,25 @@ export function formatDate(isoDate: string, style: 'short' | 'long' = 'short'): 
 /** ISO timestamp -> "17 paź 2026, 21:01" in the viewer's time zone. */
 export function formatDateTime(isoDateTime: string): string {
   return dateTime.format(new Date(isoDateTime))
+}
+
+/** "3.5" -> "3,50": an amount the way a user types it, to prefill an input. */
+export function toMoneyInput(amount: string): string {
+  return moneyInput.format(Number(amount))
+}
+
+/** "2.000" -> "2", "0.535" -> "0,535" */
+export function toQuantityInput(quantity: string): string {
+  return quantityInput.format(Number(quantity))
+}
+
+/**
+ * Read a number typed by the user ("3,49", "3.49", " 12 ") as the API's decimal string
+ * ("3.49"). Returns null for anything else, including more decimal places than allowed.
+ */
+export function parseDecimalInput(text: string, maxPlaces: number): string | null {
+  const normalized = text.trim().replace(',', '.')
+  return new RegExp(`^\\d+(\\.\\d{1,${maxPlaces}})?$`).test(normalized) ? normalized : null
 }
 
 /** "1234563218" -> "123-456-32-18", the way a NIP is usually printed. */

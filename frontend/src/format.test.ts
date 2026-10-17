@@ -8,6 +8,9 @@ import {
   formatNip,
   formatQuantity,
   formatReceiptCount,
+  parseDecimalInput,
+  toMoneyInput,
+  toQuantityInput,
 } from './format'
 import { plain } from './test/utils'
 
@@ -49,6 +52,38 @@ describe('formatDate', () => {
 describe('formatDateTime', () => {
   it('shows the date and time in the local time zone', () => {
     expect(plain(formatDateTime('2026-10-17T19:01:31Z'))).toBe('17 paź 2026, 19:01')
+  })
+})
+
+describe('form inputs', () => {
+  it.each([
+    ['3.5', '3,50'],
+    ['0.00', '0,00'],
+    ['1234.5', '1234,50'],
+  ])('prefills the amount %s as %s', (amount, expected) => {
+    expect(toMoneyInput(amount)).toBe(expected)
+  })
+
+  it.each([
+    ['2.000', '2'],
+    ['0.535', '0,535'],
+    ['1.500', '1,5'],
+  ])('prefills the quantity %s as %s', (quantity, expected) => {
+    expect(toQuantityInput(quantity)).toBe(expected)
+  })
+
+  it.each([
+    ['3,49', 2, '3.49'],
+    ['3.49', 2, '3.49'],
+    [' 12 ', 2, '12'],
+    ['0,535', 3, '0.535'],
+    ['3,499', 2, null],
+    ['-1', 2, null],
+    ['1 234,50', 2, null],
+    ['abc', 2, null],
+    ['', 2, null],
+  ])('reads %j (max %i places) as %j', (text, places, expected) => {
+    expect(parseDecimalInput(text, places)).toBe(expected)
   })
 })
 

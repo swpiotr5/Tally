@@ -67,7 +67,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     throw new ApiError(response.status, await errorMessage(response))
   }
+  if (response.status === 204) {
+    return undefined as T
+  }
   return (await response.json()) as T
+}
+
+function jsonRequest(method: string, body: unknown): RequestInit {
+  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
 }
 
 async function errorMessage(response: Response): Promise<string> {
@@ -94,4 +101,28 @@ export function uploadReceipt(image: File): Promise<Receipt> {
   const body = new FormData()
   body.append('file', image)
   return request('/receipts', { method: 'POST', body })
+}
+
+// PATCH bodies carry only the fields that changed.
+export type ReceiptChanges = Partial<
+  Pick<Receipt, 'store_name' | 'store_nip' | 'purchase_date' | 'total'>
+>
+export type ReceiptItemChanges = Partial<
+  Pick<ReceiptItem, 'raw_name' | 'quantity' | 'unit_price' | 'total_price' | 'discount' | 'category'>
+>
+
+export function updateReceipt(id: number, changes: ReceiptChanges): Promise<Receipt> {
+  return request(`/receipts/${id}`, jsonRequest('PATCH', changes))
+}
+
+export function updateReceiptItem(
+  receiptId: number,
+  itemId: number,
+  changes: ReceiptItemChanges,
+): Promise<ReceiptItem> {
+  return request(`/receipts/${receiptId}/items/${itemId}`, jsonRequest('PATCH', changes))
+}
+
+export function deleteReceiptItem(receiptId: number, itemId: number): Promise<void> {
+  return request(`/receipts/${receiptId}/items/${itemId}`, { method: 'DELETE' })
 }

@@ -1,9 +1,12 @@
-import { useLoaderData, useLocation } from 'react-router'
+import { useState } from 'react'
+import { useLoaderData, useLocation, useRevalidator } from 'react-router'
 
 import type { ReceiptItem } from '../api'
 import { BackLink } from '../components/BackLink'
 import { Banner } from '../components/Banner'
 import { CategoryChip } from '../components/CategoryChip'
+import { PencilIcon } from '../components/icons'
+import { ItemEditor, ReceiptHeaderEditor } from '../components/ReceiptEditors'
 import {
   formatDate,
   formatDateTime,
@@ -15,23 +18,56 @@ import {
 import type { receiptLoader } from '../loaders'
 import styles from './ReceiptPage.module.css'
 
+type Editing = { kind: 'header' } | { kind: 'item'; item: ReceiptItem } | null
+
 export function ReceiptPage() {
   const receipt = useLoaderData<typeof receiptLoader>()
   const { state } = useLocation()
+  const revalidator = useRevalidator()
+  const [editing, setEditing] = useState<Editing>(null)
+  const [saved, setSaved] = useState(false)
   const justUploaded = (state as { justUploaded?: boolean } | null)?.justUploaded === true
+
+  // Reload the receipt before closing the editor, so the old values never flash back.
+  async function handleSaved() {
+    await revalidator.revalidate()
+    setEditing(null)
+    setSaved(true)
+  }
+
+  function closeEditor() {
+    setEditing(null)
+  }
 
   return (
     <div className={styles.page}>
       <title>{`${receipt.store_name} · Tally`}</title>
       <BackLink to="/">Paragony</BackLink>
-      {justUploaded && (
-        <Banner tone="success">Paragon zapisany. Sprawdź, czy wszystko się zgadza.</Banner>
+      {saved ? (
+        <Banner tone="success">Zmiany zapisane.</Banner>
+      ) : (
+        justUploaded && (
+          <Banner tone="success">Paragon zapisany. Sprawdź, czy wszystko się zgadza.</Banner>
+        )
       )}
       {receipt.status === 'needs_review' && (
         <Banner tone="warning">Ten paragon wymaga sprawdzenia – coś się w nim nie zgadza.</Banner>
       )}
+      <p className={styles.hint}>
+        <PencilIcon />
+        Stuknij pozycję lub ołówek, aby poprawić błąd.
+      </p>
 
       <article className={styles.paper} aria-labelledby="receipt-store">
+        <button
+          type="button"
+          className={styles.editHeader}
+          aria-label="Popraw dane paragonu"
+          aria-haspopup="dialog"
+          onClick={() => setEditing({ kind: 'header' })}
+        >
+          <PencilIcon />
+        </button>
         <header className={styles.header}>
           <h1 id="receipt-store" className={styles.store}>
             {receipt.store_name}
@@ -45,7 +81,9 @@ export function ReceiptPage() {
         {receipt.items.length > 0 ? (
           <ul className={styles.items} aria-label="Pozycje">
             {receipt.items.map((item) => (
-              <ItemRow key={item.id} item={item} />
+              <li key={item.id}>
+                <ItemRow item={item} onEdit={() => setEditing({ kind: 'item', item })} />
+              </li>
             ))}
           </ul>
         ) : (
@@ -61,32 +99,44 @@ export function ReceiptPage() {
       <p className={styles.meta}>
         Dodano {formatDateTime(receipt.created_at)} · {formatItemCount(receipt.items.length)}
       </p>
+
+      {editing?.kind === 'item' && (
+        <ItemEditor
+          receiptId={receipt.id}
+          item={editing.item}
+          onClose={closeEditor}
+          onSaved={handleSaved}
+        />
+      )}
+      {editing?.kind === 'header' && (
+        <ReceiptHeaderEditor receipt={receipt} onClose={closeEditor} onSaved={handleSaved} />
+      )}
     </div>
   )
 }
 
-function ItemRow({ item }: { item: ReceiptItem }) {
+function ItemRow({ item, onEdit }: { item: ReceiptItem; onEdit: () => void }) {
   const hasDiscount = Number(item.discount) > 0
 
   return (
-    <li className={styles.item}>
-      <div className={styles.itemMain}>
+    <button type="button" className={styles.item} aria-haspopup="dialog" onClick={onEdit}>
+      <span className={styles.itemMain}>
         <span className={styles.itemName}>{item.raw_name}</span>
         <span className={styles.itemPrice}>{formatMoney(item.total_price)}</span>
-      </div>
-      <div className={styles.itemDetails}>
+      </span>
+      <span className={styles.itemDetails}>
         <CategoryChip category={item.category} />
         <span className={styles.itemQty}>
           {formatQuantity(item.quantity)} × {formatMoney(item.unit_price)}
         </span>
-      </div>
+      </span>
       {hasDiscount && (
-        <div className={styles.discount}>
+        <span className={styles.discount}>
           <span>Rabat</span>
           <span>−{formatMoney(item.discount)}</span>
-        </div>
+        </span>
       )}
-    </li>
+    </button>
   )
 }
 

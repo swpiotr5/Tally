@@ -195,5 +195,9 @@ function uploadErrorMessage(error: unknown): string {
   if (error.status === 413) {
     return 'Zdjęcie jest za duże. Spróbuj zrobić je jeszcze raz.'
   }
+  if (error.status === 502) {
+    // The backend could not read the receipt: usually a blurry or cropped photo.
+    return 'Nie udało się odczytać paragonu. Zrób wyraźne zdjęcie całego paragonu i spróbuj ponownie.'
+  }
   return 'Nie udało się odczytać paragonu. Spróbuj ponownie.'
 }
