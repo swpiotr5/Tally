@@ -56,8 +56,10 @@ class ExtractedReceipt(BaseModel):
     store_nip: str | None = Field(
         default=None, pattern=r"^\d{10}$", description="Store tax ID: 10 digits, no separators."
     )
-    purchase_date: date
-    total: Money = Field(description="Amount paid, as printed on the receipt.")
+    # Nullable on purpose: when no photo shows the date or the total, the model must say so
+    # rather than invent a value. Whether such a receipt can be stored is the API's decision.
+    purchase_date: date | None = Field(description="Date of the sale; null if no photo shows it.")
+    total: Money | None = Field(description="Amount paid, as printed; null if no photo shows it.")
     items: list[ExtractedItem]
 
     @field_validator("store_nip", mode="before")

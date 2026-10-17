@@ -180,6 +180,33 @@ def test_requires_a_photo(client: TestClient) -> None:
     assert client.post("/receipts").status_code == 422
 
 
+@pytest.mark.parametrize(
+    ("missing", "expected"),
+    [
+        ({"total": None}, ["total"]),
+        ({"purchase_date": None, "total": None}, ["purchase_date", "total"]),
+    ],
+)
+def test_receipt_without_date_or_total_is_not_stored(
+    client: TestClient,
+    db_session: Session,
+    upload_dir: Path,
+    extractor: FakeExtractor,
+    missing: dict,
+    expected: list[str],
+) -> None:
+    extractor.result = extracted_receipt().model_copy(update=missing)
+
+    response = upload(client, TOP)
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "incomplete_receipt"
+    assert detail["missing"] == expected
+    assert receipt_count(db_session) == 0
+    assert saved_files(upload_dir) == []
+
+
 @pytest.mark.parametrize("extractor", [UnreadableReceiptExtractor()])
 def test_unreadable_receipt_returns_502_and_saves_nothing(
     client: TestClient, db_session: Session, upload_dir: Path

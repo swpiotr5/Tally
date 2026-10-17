@@ -70,6 +70,19 @@ def create_receipt(
             status.HTTP_502_BAD_GATEWAY, detail="Could not read the receipt from the photos."
         ) from error
 
+    # Every stored receipt has a date and a total. When the photos miss them (typically the
+    # bottom of a long receipt), the client can add a photo and send the receipt again.
+    missing = [field for field in ("purchase_date", "total") if getattr(extracted, field) is None]
+    if missing:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "incomplete_receipt",
+                "missing": missing,
+                "message": "The photos do not show the date or the total of the receipt.",
+            },
+        )
+
     saved: list[str] = []
     try:
         for file, image in zip(files, images, strict=True):

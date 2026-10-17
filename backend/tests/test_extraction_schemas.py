@@ -31,6 +31,17 @@ def test_parses_json_into_exact_types() -> None:
     assert item.category is Category.DAIRY
 
 
+def test_date_and_total_can_be_missing_but_must_be_given() -> None:
+    # The model has to answer null explicitly; leaving the keys out is not allowed.
+    receipt = ExtractedReceipt.model_validate_json(
+        '{"store_name": "Lidl", "purchase_date": null, "total": null, "items": []}'
+    )
+
+    assert (receipt.purchase_date, receipt.total) == (None, None)
+    with pytest.raises(ValidationError):
+        ExtractedReceipt.model_validate_json('{"store_name": "Lidl", "items": []}')
+
+
 def test_nip_is_optional() -> None:
     receipt = ExtractedReceipt(
         store_name="Lidl", purchase_date=date(2026, 10, 17), total=Decimal("0.00"), items=[]
@@ -104,4 +115,4 @@ def test_amounts_are_plain_numbers_in_the_json_schema() -> None:
 
     for field in ("quantity", "unit_price", "total_price", "discount"):
         assert item_schema[field]["type"] == "number"
-    assert receipt_schema["total"]["type"] == "number"
+    assert receipt_schema["total"]["anyOf"] == [{"type": "number"}, {"type": "null"}]

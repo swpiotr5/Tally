@@ -20,7 +20,9 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     vision_model: str = "claude-haiku-5-5"
     vision_effort: Literal["low", "medium", "high"] = "medium"
-    vision_max_image_side: int = Field(default=1568, ge=512, le=4096)
+    # 2576 px is the largest side the newest models read; small receipt print needs it, and
+    # the extra input tokens cost less than the output (measured on real photos).
+    vision_max_image_side: int = Field(default=2576, ge=512, le=4096)
 
     @model_validator(mode="after")
     def _vision_needs_api_key(self) -> Self:

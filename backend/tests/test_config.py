@@ -85,5 +85,5 @@ def test_vision_settings_have_defaults_and_hide_the_key(monkeypatch: pytest.Monk
 
     assert settings.vision_model == "claude-haiku-5-5"
     assert settings.vision_effort == "medium"
-    assert settings.vision_max_image_side == 1568
+    assert settings.vision_max_image_side == 2576
     assert "sk-ant-test-key" not in repr(settings)

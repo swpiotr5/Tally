@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None, client: anthropic.Anthropic | None = Non
         default=os.environ.get("VISION_EFFORT", "medium"),
     )
     parser.add_argument(
-        "--max-side", type=int, default=int(os.environ.get("VISION_MAX_IMAGE_SIDE", "1568"))
+        "--max-side", type=int, default=int(os.environ.get("VISION_MAX_IMAGE_SIDE", "2576"))
     )
     args = parser.parse_args(argv)
 
