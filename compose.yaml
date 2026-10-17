@@ -1,3 +1,4 @@
+# Development setup. A separate production compose file comes with the deploy phase.
 services:
   db:
     image: postgres:18-alpine
@@ -13,5 +14,29 @@ services:
       timeout: 3s
       retries: 10
 
+  api:
+    build: ./backend
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - uploads:/data/uploads
+      # Live code for --reload; rebuild the image only when dependencies change.
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+    command: >-
+      sh -c "alembic upgrade head
+      && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app"
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   db-data:
+  uploads:
