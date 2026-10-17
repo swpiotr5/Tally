@@ -1,7 +1,7 @@
 import pytest
 
 from app.config import Settings
-from app.extraction import ExtractedReceipt, StubExtractor, get_extractor
+from app.extraction import ExtractedReceipt, StubExtractor, VisionLLMExtractor, get_extractor
 
 DB_URL = "postgresql+psycopg://user:pass@localhost:5432/tally"
 
@@ -31,6 +31,15 @@ def test_factory_builds_stub_extractor() -> None:
     settings = Settings(_env_file=None, database_url=DB_URL, extractor="stub")
 
     assert isinstance(get_extractor(settings), StubExtractor)
+
+
+def test_factory_builds_vision_extractor() -> None:
+    # Building the client makes no request, so no real key or network is needed.
+    settings = Settings(
+        _env_file=None, database_url=DB_URL, extractor="vision", anthropic_api_key="sk-ant-test"
+    )
+
+    assert isinstance(get_extractor(settings), VisionLLMExtractor)
 
 
 def test_factory_rejects_unknown_extractor() -> None:

@@ -61,7 +61,7 @@ def test_accepts_weighed_quantity() -> None:
         ("quantity", "0.0005"),
         ("unit_price", "-1.00"),
         ("total_price", "3.499"),
-        ("discount", "-0.50"),
+        ("discount", "abc"),
         ("category", "electronics"),
     ],
 )
@@ -70,13 +70,38 @@ def test_rejects_invalid_item_field(field: str, value: str) -> None:
         ExtractedItem.model_validate(ITEM | {field: value})
 
 
-@pytest.mark.parametrize("nip", ["779-101-13-27", "779101132", "77910113270", "NIP7791011"])
-def test_rejects_nip_that_is_not_ten_digits(nip: str) -> None:
-    with pytest.raises(ValidationError):
-        ExtractedReceipt(
-            store_name="Biedronka",
-            store_nip=nip,
-            purchase_date=date(2026, 10, 17),
-            total=Decimal("6.48"),
-            items=[],
-        )
+@pytest.mark.parametrize("printed", [-0.5, "-0.50", Decimal("-0.50")])
+def test_stores_a_printed_negative_discount_as_a_positive_amount(printed: object) -> None:
+    item = ExtractedItem.model_validate(ITEM | {"discount": printed})
+
+    assert item.discount == Decimal("0.50")
+
+
+def receipt_with_nip(nip: str) -> ExtractedReceipt:
+    return ExtractedReceipt(
+        store_name="Biedronka",
+        store_nip=nip,
+        purchase_date=date(2026, 10, 17),
+        total=Decimal("6.48"),
+        items=[],
+    )
+
+
+@pytest.mark.parametrize("printed", ["7791011327", "779-101-13-27", "PL 779 101 13 27"])
+def test_keeps_only_the_digits_of_a_nip(printed: str) -> None:
+    assert receipt_with_nip(printed).store_nip == "7791011327"
+
+
+@pytest.mark.parametrize("unreadable", ["779101132", "77910113270", "NIP"])
+def test_drops_a_nip_that_does_not_have_ten_digits(unreadable: str) -> None:
+    assert receipt_with_nip(unreadable).store_nip is None
+
+
+def test_amounts_are_plain_numbers_in_the_json_schema() -> None:
+    # A string option would let the model answer "3,49", which is not a valid decimal.
+    item_schema = ExtractedItem.model_json_schema()["properties"]
+    receipt_schema = ExtractedReceipt.model_json_schema()["properties"]
+
+    for field in ("quantity", "unit_price", "total_price", "discount"):
+        assert item_schema[field]["type"] == "number"
+    assert receipt_schema["total"]["type"] == "number"

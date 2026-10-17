@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.receipts import provide_extractor
 from app.config import Settings, get_settings
 from app.db import get_session
-from app.extraction import ExtractedItem, ExtractedReceipt
+from app.extraction import ExtractedItem, ExtractedReceipt, ExtractionError
 from app.main import app
 from app.models import Category, Receipt
 
@@ -139,6 +139,23 @@ def test_rejects_unsupported_file_type(
 
 def test_requires_a_file(client: TestClient) -> None:
     assert client.post("/receipts").status_code == 422
+
+
+class UnreadableReceiptExtractor:
+    def extract(self, image: bytes) -> ExtractedReceipt:
+        raise ExtractionError("blurry photo")
+
+
+@pytest.mark.parametrize("extractor", [UnreadableReceiptExtractor()])
+def test_unreadable_receipt_returns_502_and_saves_nothing(
+    client: TestClient, db_session: Session, upload_dir: Path
+) -> None:
+    response = client.post("/receipts", files={"file": JPEG})
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Could not read the receipt from the photo."}
+    assert receipt_count(db_session) == 0
+    assert saved_files(upload_dir) == []
 
 
 @pytest.mark.parametrize("extractor", [FailingExtractor()])

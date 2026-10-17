@@ -59,3 +59,31 @@ def test_ignores_unrelated_variables_from_env_file(
     settings = Settings(_env_file=env_file)
 
     assert settings.database_url == DB_URL
+
+
+@pytest.mark.parametrize("key", [None, ""])
+def test_vision_extractor_requires_an_api_key(
+    monkeypatch: pytest.MonkeyPatch, key: str | None
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("EXTRACTOR", "vision")
+    if key is None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+
+    with pytest.raises(ValidationError, match="ANTHROPIC_API_KEY"):
+        Settings(_env_file=None)
+
+
+def test_vision_settings_have_defaults_and_hide_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", DB_URL)
+    monkeypatch.setenv("EXTRACTOR", "vision")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.vision_model == "claude-haiku-5-5"
+    assert settings.vision_effort == "medium"
+    assert settings.vision_max_image_side == 1568
+    assert "sk-ant-test-key" not in repr(settings)

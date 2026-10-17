@@ -5,6 +5,7 @@ description = "Tally backend: receipt upload, extraction and expense storage"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.0",
+    "anthropic>=1.15.0",
     "fastapi>=0.143.3",
     "pillow>=13.0.0",
     "pillow-heif>=1.8.1",

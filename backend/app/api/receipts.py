@@ -1,3 +1,5 @@
+import logging
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
@@ -7,13 +9,21 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.schemas import ReceiptRead, ReceiptSummary
 from app.config import Settings, get_settings
 from app.db import get_session
-from app.extraction import ExtractedReceipt, ReceiptExtractor, get_extractor
+from app.extraction import ExtractedReceipt, ExtractionError, ReceiptExtractor, get_extractor
 from app.models import Receipt, ReceiptItem
 from app.storage import ALLOWED_IMAGE_TYPES, delete_image, save_image
 
+logger = logging.getLogger(__name__)
 
-def provide_extractor(settings: Annotated[Settings, Depends(get_settings)]) -> ReceiptExtractor:
-    return get_extractor(settings)
+
+@lru_cache
+def _configured_extractor() -> ReceiptExtractor:
+    # One extractor per process, so the vision extractor reuses its API client and connections.
+    return get_extractor(get_settings())
+
+
+def provide_extractor() -> ReceiptExtractor:
+    return _configured_extractor()
 
 
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -37,7 +47,13 @@ def create_receipt(
 
     image = file.file.read()
     # Extract before saving: if extraction fails, there is no file to clean up.
-    extracted = extractor.extract(image)
+    try:
+        extracted = extractor.extract(image)
+    except ExtractionError as error:
+        logger.warning("Receipt extraction failed: %s", error)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, detail="Could not read the receipt from the photo."
+        ) from error
     filename = save_image(image, file.content_type, settings.upload_dir)
 
     receipt = _to_model(extracted, image_path=filename)
