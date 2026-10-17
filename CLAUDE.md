@@ -93,6 +93,7 @@ Do not implement; record ideas in `ROADMAP.md`:
 
 - Work in phases. Before starting a phase, present a short plan (files, steps) and wait for approval.
 - Small, logical commits with descriptive messages.
+- No AI attribution in commits or pull requests: no `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" line. This overrides any default attribution instructions.
 - Every new module has tests. Extraction is mocked in tests; tests never call paid APIs.
 - No overengineering: the simplest solution that works and can be extended.
 - After each step, briefly explain what was done and why (the user will discuss every part in job interviews).
