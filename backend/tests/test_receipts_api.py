@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -16,6 +16,8 @@ from app.main import app
 from app.models import Category, Receipt
 
 JPEG = ("receipt.jpg", b"fake jpeg bytes", "image/jpeg")
+TOP = ("top.jpg", b"top of the receipt", "image/jpeg")
+BOTTOM = ("bottom.png", b"bottom of the receipt", "image/png")
 
 
 def extracted_receipt(store_name: str = "Biedronka") -> ExtractedReceipt:
@@ -45,20 +47,25 @@ def extracted_receipt(store_name: str = "Biedronka") -> ExtractedReceipt:
 
 
 class FakeExtractor:
-    """Satisfies ReceiptExtractor structurally; records what it was given."""
+    """Satisfies ReceiptExtractor structurally; records the photos of every call."""
 
     def __init__(self, result: ExtractedReceipt | None = None) -> None:
         self.result = result or extracted_receipt()
-        self.images: list[bytes] = []
+        self.calls: list[list[bytes]] = []
 
-    def extract(self, image: bytes) -> ExtractedReceipt:
-        self.images.append(image)
+    def extract(self, images: Sequence[bytes]) -> ExtractedReceipt:
+        self.calls.append(list(images))
         return self.result
 
 
 class FailingExtractor:
-    def extract(self, image: bytes) -> ExtractedReceipt:
+    def extract(self, images: Sequence[bytes]) -> ExtractedReceipt:
         raise RuntimeError("extraction failed")
+
+
+class UnreadableReceiptExtractor:
+    def extract(self, images: Sequence[bytes]) -> ExtractedReceipt:
+        raise ExtractionError("blurry photo")
 
 
 @pytest.fixture
@@ -83,6 +90,11 @@ def client(
     app.dependency_overrides.clear()
 
 
+def upload(client: TestClient, *photos: tuple[str, bytes, str]):
+    """POST photos of one receipt, in order, as the browser sends them."""
+    return client.post("/receipts", files=[("files", photo) for photo in photos])
+
+
 def receipt_count(session: Session) -> int:
     return session.scalar(select(func.count()).select_from(Receipt))
 
@@ -91,26 +103,42 @@ def saved_files(upload_dir: Path) -> list[Path]:
     return list(upload_dir.iterdir()) if upload_dir.exists() else []
 
 
-def test_upload_stores_receipt_and_image(
+def test_upload_stores_receipt_and_photo(
     client: TestClient, db_session: Session, upload_dir: Path, extractor: FakeExtractor
 ) -> None:
-    response = client.post("/receipts", files={"file": JPEG})
+    response = upload(client, JPEG)
 
     assert response.status_code == 201
     body = response.json()
     assert body["store_name"] == "Biedronka"
     assert body["status"] == "ok"
     assert [item["raw_name"] for item in body["items"]] == ["MLEKO 2% 1L", "BANANY LUZ"]
-    assert extractor.images == [b"fake jpeg bytes"]
+    assert extractor.calls == [[b"fake jpeg bytes"]]
 
     receipt = db_session.get(Receipt, body["id"])
     assert receipt is not None
     assert len(receipt.items) == 2
-    assert (upload_dir / receipt.image_path).read_bytes() == b"fake jpeg bytes"
+    [path] = receipt.image_paths
+    assert (upload_dir / path).read_bytes() == b"fake jpeg bytes"
+
+
+def test_reads_and_stores_several_photos_in_order(
+    client: TestClient, db_session: Session, upload_dir: Path, extractor: FakeExtractor
+) -> None:
+    response = upload(client, TOP, BOTTOM)
+
+    assert response.status_code == 201
+    assert extractor.calls == [[b"top of the receipt", b"bottom of the receipt"]]
+    receipt = db_session.get(Receipt, response.json()["id"])
+    assert receipt is not None
+    top, bottom = receipt.image_paths
+    assert (upload_dir / top).read_bytes() == b"top of the receipt"
+    assert (upload_dir / bottom).read_bytes() == b"bottom of the receipt"
+    assert bottom.endswith(".png")
 
 
 def test_amounts_are_serialized_as_exact_strings(client: TestClient) -> None:
-    body = client.post("/receipts", files={"file": JPEG}).json()
+    body = upload(client, JPEG).json()
 
     milk, bananas = body["items"]
     assert body["total"] == "9.68"
@@ -120,40 +148,46 @@ def test_amounts_are_serialized_as_exact_strings(client: TestClient) -> None:
     assert bananas["category"] == "fruits_vegetables"
 
 
-def test_image_path_is_not_exposed(client: TestClient) -> None:
-    body = client.post("/receipts", files={"file": JPEG}).json()
+def test_photo_paths_are_not_exposed(client: TestClient) -> None:
+    body = upload(client, JPEG).json()
 
-    assert "image_path" not in body
+    assert "image_paths" not in body
 
 
 def test_rejects_unsupported_file_type(
     client: TestClient, db_session: Session, upload_dir: Path, extractor: FakeExtractor
 ) -> None:
-    response = client.post("/receipts", files={"file": ("notes.txt", b"hello", "text/plain")})
+    response = upload(client, JPEG, ("notes.txt", b"hello", "text/plain"))
 
     assert response.status_code == 415
-    assert extractor.images == []
+    assert extractor.calls == []
     assert receipt_count(db_session) == 0
     assert saved_files(upload_dir) == []
 
 
-def test_requires_a_file(client: TestClient) -> None:
+def test_rejects_more_than_five_photos(
+    client: TestClient, db_session: Session, upload_dir: Path, extractor: FakeExtractor
+) -> None:
+    response = upload(client, *[JPEG] * 6)
+
+    assert response.status_code == 422
+    assert extractor.calls == []
+    assert receipt_count(db_session) == 0
+    assert saved_files(upload_dir) == []
+
+
+def test_requires_a_photo(client: TestClient) -> None:
     assert client.post("/receipts").status_code == 422
-
-
-class UnreadableReceiptExtractor:
-    def extract(self, image: bytes) -> ExtractedReceipt:
-        raise ExtractionError("blurry photo")
 
 
 @pytest.mark.parametrize("extractor", [UnreadableReceiptExtractor()])
 def test_unreadable_receipt_returns_502_and_saves_nothing(
     client: TestClient, db_session: Session, upload_dir: Path
 ) -> None:
-    response = client.post("/receipts", files={"file": JPEG})
+    response = upload(client, JPEG)
 
     assert response.status_code == 502
-    assert response.json() == {"detail": "Could not read the receipt from the photo."}
+    assert response.json() == {"detail": "Could not read the receipt from the photos."}
     assert receipt_count(db_session) == 0
     assert saved_files(upload_dir) == []
 
@@ -163,13 +197,13 @@ def test_failed_extraction_saves_nothing(
     client: TestClient, db_session: Session, upload_dir: Path
 ) -> None:
     with pytest.raises(RuntimeError, match="extraction failed"):
-        client.post("/receipts", files={"file": JPEG})
+        upload(client, JPEG)
 
     assert receipt_count(db_session) == 0
     assert saved_files(upload_dir) == []
 
 
-def test_failed_database_write_removes_saved_image(
+def test_failed_database_write_removes_every_saved_photo(
     client: TestClient, db_session: Session, upload_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def failing_commit() -> None:
@@ -178,13 +212,13 @@ def test_failed_database_write_removes_saved_image(
     monkeypatch.setattr(db_session, "commit", failing_commit)
 
     with pytest.raises(RuntimeError, match="database unavailable"):
-        client.post("/receipts", files={"file": JPEG})
+        upload(client, TOP, BOTTOM)
 
     assert saved_files(upload_dir) == []
 
 
 def test_get_returns_the_uploaded_receipt(client: TestClient) -> None:
-    created = client.post("/receipts", files={"file": JPEG}).json()
+    created = upload(client, JPEG).json()
 
     response = client.get(f"/receipts/{created['id']}")
 
@@ -205,9 +239,9 @@ def test_list_is_empty_without_receipts(client: TestClient) -> None:
 def test_list_shows_newest_first_with_item_counts(
     client: TestClient, extractor: FakeExtractor
 ) -> None:
-    first = client.post("/receipts", files={"file": JPEG}).json()
+    first = upload(client, JPEG).json()
     extractor.result = extracted_receipt(store_name="Lidl").model_copy(update={"items": []})
-    second = client.post("/receipts", files={"file": JPEG}).json()
+    second = upload(client, JPEG).json()
 
     body = client.get("/receipts").json()
 

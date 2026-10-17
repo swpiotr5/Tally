@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 
@@ -6,14 +7,14 @@ from app.models import Category
 
 
 class StubExtractor:
-    """Returns the same fake receipt for any image.
+    """Returns the same fake receipt for any photos.
 
     Lets the upload flow work end to end before a real extractor exists. The data is
     internally consistent (items minus discounts equal the total, NIP checksum is valid),
     so later validation rules accept it.
     """
 
-    def extract(self, image: bytes) -> ExtractedReceipt:
+    def extract(self, images: Sequence[bytes]) -> ExtractedReceipt:
         return ExtractedReceipt(
             store_name="Stub Market",
             store_nip="1234563218",

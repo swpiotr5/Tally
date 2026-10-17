@@ -13,7 +13,7 @@ def make_receipt(**overrides: object) -> Receipt:
         "store_nip": "7791011327",
         "purchase_date": date(2026, 10, 17),
         "total": Decimal("9.68"),
-        "image_path": "uploads/receipt.jpg",
+        "image_paths": ["uploads/receipt.jpg"],
         "items": [
             ReceiptItem(
                 raw_name="MLEKO 2% 1L",

@@ -3,6 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import Date, DateTime, Enum, ForeignKey, MetaData, Numeric, String, func
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # Money is always Numeric(10, 2) -> Decimal; never float.
@@ -60,7 +61,8 @@ class Receipt(Base):
     store_nip: Mapped[str | None] = mapped_column(String(10))
     purchase_date: Mapped[date] = mapped_column(Date)
     total: Mapped[Decimal] = mapped_column(Money)
-    image_path: Mapped[str] = mapped_column(String(500))
+    # Paths relative to UPLOAD_DIR; a long receipt can be photographed in parts, top to bottom.
+    image_paths: Mapped[list[str]] = mapped_column(ARRAY(String(500)))
     status: Mapped[ReceiptStatus] = mapped_column(ReceiptStatusType, default=ReceiptStatus.OK)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

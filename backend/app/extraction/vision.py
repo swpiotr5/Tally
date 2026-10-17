@@ -1,6 +1,7 @@
 import base64
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -30,9 +31,11 @@ class ExtractionStats:
 
 
 class VisionLLMExtractor:
-    """Reads a receipt photo with a Claude vision model and structured outputs.
+    """Reads receipt photos with a Claude vision model and structured outputs.
 
-    The API client is passed in, so tests use a fake one and never call the paid API.
+    All photos of one receipt go into a single request, so the model can merge the parts
+    of a long receipt. The API client is passed in, so tests use a fake one and never call
+    the paid API.
     """
 
     def __init__(
@@ -43,15 +46,17 @@ class VisionLLMExtractor:
         self._effort = effort
         self._max_image_side = max_image_side
 
-    def extract(self, image: bytes) -> ExtractedReceipt:
-        receipt, _ = self.extract_with_stats(image)
+    def extract(self, images: Sequence[bytes]) -> ExtractedReceipt:
+        receipt, _ = self.extract_with_stats(images)
         return receipt
 
-    def extract_with_stats(self, image: bytes) -> tuple[ExtractedReceipt, ExtractionStats]:
+    def extract_with_stats(
+        self, images: Sequence[bytes]
+    ) -> tuple[ExtractedReceipt, ExtractionStats]:
         try:
-            jpeg = prepare_image(image, self._max_image_side)
+            photos = [prepare_image(image, self._max_image_side) for image in images]
         except InvalidImageError as error:
-            raise ExtractionError("The file is not a readable image.") from error
+            raise ExtractionError("A file is not a readable image.") from error
 
         started = time.perf_counter()
         try:
@@ -59,7 +64,7 @@ class VisionLLMExtractor:
                 model=self._model,
                 max_tokens=MAX_TOKENS,
                 system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": self._content(jpeg)}],
+                messages=[{"role": "user", "content": self._content(photos)}],
                 output_config={"effort": self._effort},
                 output_format=ExtractedReceipt,
             )
@@ -82,8 +87,10 @@ class VisionLLMExtractor:
             seconds=time.perf_counter() - started,
         )
         logger.info(
-            "Receipt read by %s: %d input + %d output tokens in %.1f s, stop reason %s",
+            "Receipt read by %s from %d photo(s): %d input + %d output tokens in %.1f s, "
+            "stop reason %s",
             self._model,
+            len(photos),
             stats.input_tokens,
             stats.output_tokens,
             stats.seconds,
@@ -96,15 +103,20 @@ class VisionLLMExtractor:
         return response.parsed_output, stats
 
     @staticmethod
-    def _content(jpeg: bytes) -> list[dict]:
-        return [
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": base64.standard_b64encode(jpeg).decode("ascii"),
-                },
-            },
-            {"type": "text", "text": USER_PROMPT},
-        ]
+    def _content(photos: list[bytes]) -> list[dict]:
+        content: list[dict] = []
+        for number, jpeg in enumerate(photos, start=1):
+            if len(photos) > 1:
+                content.append({"type": "text", "text": f"Photo {number} of {len(photos)}:"})
+            content.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64.standard_b64encode(jpeg).decode("ascii"),
+                    },
+                }
+            )
+        content.append({"type": "text", "text": USER_PROMPT})
+        return content

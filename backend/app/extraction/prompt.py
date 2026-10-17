@@ -5,6 +5,12 @@ SYSTEM_PROMPT = """\
 You read photos of Polish shop receipts ("paragon fiskalny") and return their contents \
 in the given JSON schema.
 
+A long receipt can come as several photos, in order from top to bottom. Neighbouring \
+photos overlap: the same printed lines can appear in more than one photo. List every \
+product line of the receipt exactly once. A product can really appear several times on a \
+receipt (bought twice with different quantities), so use the surrounding lines to tell a \
+real repeat from an overlap between photos.
+
 Receipt header:
 - store_name: the shop's trading name as people call it (e.g. "Biedronka", "Lidl", \
 "Żabka", "Rossmann"), not the legal company name, when both are printed.

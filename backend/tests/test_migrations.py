@@ -30,6 +30,37 @@ def test_database_enum_values_match_python_enum(
     assert list(values) == [member.value for member in enum_cls]
 
 
+SINGLE_PHOTO_REVISION = "c2b4ec2ff5b9"
+
+
+def insert_receipt(connection: Connection, photo_column: str, photos: str) -> None:
+    connection.execute(
+        text(
+            f"INSERT INTO receipt (store_name, purchase_date, total, {photo_column}, status) "
+            f"VALUES ('Lidl', '2026-10-17', 9.68, {photos}, 'ok')"
+        )
+    )
+
+
+def test_existing_photo_survives_the_move_to_a_photo_list(
+    connection: Connection, alembic_cfg: Config
+) -> None:
+    command.downgrade(alembic_cfg, SINGLE_PHOTO_REVISION)
+    insert_receipt(connection, "image_path", "'old.jpg'")
+
+    command.upgrade(alembic_cfg, "head")
+
+    assert connection.scalar(text("SELECT image_paths FROM receipt")) == ["old.jpg"]
+
+
+def test_downgrade_keeps_the_first_photo(connection: Connection, alembic_cfg: Config) -> None:
+    insert_receipt(connection, "image_paths", "ARRAY['top.jpg', 'bottom.jpg']")
+
+    command.downgrade(alembic_cfg, SINGLE_PHOTO_REVISION)
+
+    assert connection.scalar(text("SELECT image_path FROM receipt")) == "top.jpg"
+
+
 def test_downgrade_to_base_and_upgrade_again(connection: Connection, alembic_cfg: Config) -> None:
     # PostgreSQL has transactional DDL, so the fixture's rollback restores the schema.
     command.downgrade(alembic_cfg, "base")

@@ -16,7 +16,7 @@ from app.extraction import (
 from app.extraction.prompt import SYSTEM_PROMPT, USER_PROMPT
 from tests.helpers import FakeAnthropic, jpeg_photo, parsed_response
 
-RECEIPT = StubExtractor().extract(b"")
+RECEIPT = StubExtractor().extract([])
 REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
 
 
@@ -32,13 +32,13 @@ def make_extractor(client: FakeAnthropic, max_image_side: int = 1568) -> VisionL
 def test_returns_the_parsed_receipt() -> None:
     client = FakeAnthropic(parsed_response(RECEIPT))
 
-    assert make_extractor(client).extract(jpeg_photo()) == RECEIPT
+    assert make_extractor(client).extract([jpeg_photo()]) == RECEIPT
 
 
 def test_sends_prompt_schema_and_model_settings() -> None:
     client = FakeAnthropic(parsed_response(RECEIPT))
 
-    make_extractor(client).extract(jpeg_photo())
+    make_extractor(client).extract([jpeg_photo()])
 
     [call] = client.messages.calls
     assert call["model"] == "claude-haiku-5-5"
@@ -51,7 +51,7 @@ def test_sends_prompt_schema_and_model_settings() -> None:
 def test_sends_the_photo_as_a_downscaled_jpeg() -> None:
     client = FakeAnthropic(parsed_response(RECEIPT))
 
-    make_extractor(client, max_image_side=800).extract(jpeg_photo(3000, 4000))
+    make_extractor(client, max_image_side=800).extract([jpeg_photo(3000, 4000)])
 
     source = client.messages.calls[0]["messages"][0]["content"][0]["source"]
     sent = Image.open(io.BytesIO(base64.standard_b64decode(source["data"])))
@@ -60,10 +60,36 @@ def test_sends_the_photo_as_a_downscaled_jpeg() -> None:
     assert sent.size == (600, 800)
 
 
+def test_sends_every_photo_of_a_long_receipt_in_order_in_one_request() -> None:
+    client = FakeAnthropic(parsed_response(RECEIPT))
+
+    make_extractor(client).extract([jpeg_photo(600, 1200), jpeg_photo(600, 900)])
+
+    [call] = client.messages.calls
+    content = call["messages"][0]["content"]
+    assert [block["type"] for block in content] == ["text", "image", "text", "image", "text"]
+    assert content[0]["text"] == "Photo 1 of 2:"
+    assert content[2]["text"] == "Photo 2 of 2:"
+    first, second = (
+        Image.open(io.BytesIO(base64.standard_b64decode(block["source"]["data"])))
+        for block in (content[1], content[3])
+    )
+    assert (first.size, second.size) == ((600, 1200), (600, 900))
+
+
+def test_does_not_call_the_api_when_any_photo_is_unreadable() -> None:
+    client = FakeAnthropic(parsed_response(RECEIPT))
+
+    with pytest.raises(ExtractionError, match="readable image"):
+        make_extractor(client).extract([jpeg_photo(), b"not an image"])
+
+    assert client.messages.calls == []
+
+
 def test_reports_tokens_and_time() -> None:
     client = FakeAnthropic(parsed_response(RECEIPT, input_tokens=1800, output_tokens=900))
 
-    _, stats = make_extractor(client).extract_with_stats(jpeg_photo())
+    _, stats = make_extractor(client).extract_with_stats([jpeg_photo()])
 
     assert (stats.input_tokens, stats.output_tokens) == (1800, 900)
     assert stats.seconds >= 0
@@ -74,7 +100,7 @@ def test_rejects_a_response_without_a_complete_receipt(stop_reason: str) -> None
     client = FakeAnthropic(parsed_response(None, stop_reason=stop_reason))
 
     with pytest.raises(ExtractionError, match=stop_reason):
-        make_extractor(client).extract(jpeg_photo())
+        make_extractor(client).extract([jpeg_photo()])
 
 
 def test_rejects_output_that_does_not_fit_the_schema() -> None:
@@ -83,7 +109,7 @@ def test_rejects_output_that_does_not_fit_the_schema() -> None:
     client = FakeAnthropic(error=caught.value)
 
     with pytest.raises(ExtractionError, match="schema"):
-        make_extractor(client).extract(jpeg_photo())
+        make_extractor(client).extract([jpeg_photo()])
 
 
 @pytest.mark.parametrize(
@@ -108,13 +134,13 @@ def test_turns_api_failures_into_extraction_errors(error: Exception, message: st
     client = FakeAnthropic(error=error)
 
     with pytest.raises(ExtractionError, match=message):
-        make_extractor(client).extract(jpeg_photo())
+        make_extractor(client).extract([jpeg_photo()])
 
 
 def test_does_not_call_the_api_for_a_file_that_is_not_an_image() -> None:
     client = FakeAnthropic(parsed_response(RECEIPT))
 
     with pytest.raises(ExtractionError, match="readable image"):
-        make_extractor(client).extract(b"not an image")
+        make_extractor(client).extract([b"not an image"])
 
     assert client.messages.calls == []

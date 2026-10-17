@@ -38,36 +38,49 @@ ExtractorDep = Annotated[ReceiptExtractor, Depends(provide_extractor)]
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 
+# A long receipt is photographed in parts; more photos than this are almost surely a mistake.
+MAX_PHOTOS = 5
+
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ReceiptRead)
 def create_receipt(
-    file: UploadFile, session: SessionDep, settings: SettingsDep, extractor: ExtractorDep
+    files: list[UploadFile], session: SessionDep, settings: SettingsDep, extractor: ExtractorDep
 ) -> Receipt:
-    """Upload a receipt photo, extract its contents and store the result."""
-    if file.content_type not in ALLOWED_IMAGE_TYPES:
+    """Upload photos of one receipt (a long one in parts, top to bottom) and store it."""
+    if len(files) > MAX_PHOTOS:
         raise HTTPException(
-            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported image type {file.content_type!r}. "
-            f"Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}.",
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Send at most {MAX_PHOTOS} photos of one receipt.",
         )
+    for file in files:
+        if file.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=f"Unsupported image type {file.content_type!r}. "
+                f"Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}.",
+            )
 
-    image = file.file.read()
-    # Extract before saving: if extraction fails, there is no file to clean up.
+    images = [file.file.read() for file in files]
+    # Extract before saving: if extraction fails, there are no files to clean up.
     try:
-        extracted = extractor.extract(image)
+        extracted = extractor.extract(images)
     except ExtractionError as error:
         logger.warning("Receipt extraction failed: %s", error)
         raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, detail="Could not read the receipt from the photo."
+            status.HTTP_502_BAD_GATEWAY, detail="Could not read the receipt from the photos."
         ) from error
-    filename = save_image(image, file.content_type, settings.upload_dir)
 
-    receipt = _to_model(extracted, image_path=filename)
+    saved: list[str] = []
     try:
+        for file, image in zip(files, images, strict=True):
+            saved.append(save_image(image, file.content_type or "", settings.upload_dir))
+        receipt = _to_model(extracted, image_paths=saved)
         session.add(receipt)
         session.commit()
     except Exception:
-        delete_image(filename, settings.upload_dir)
+        # All or nothing: no orphaned photos on disk when anything after extraction fails.
+        for filename in saved:
+            delete_image(filename, settings.upload_dir)
         raise
     return receipt
 
@@ -144,9 +157,9 @@ def _find_item(session: Session, receipt_id: int, item_id: int) -> ReceiptItem:
     return item
 
 
-def _to_model(extracted: ExtractedReceipt, image_path: str) -> Receipt:
+def _to_model(extracted: ExtractedReceipt, image_paths: list[str]) -> Receipt:
     return Receipt(
         **extracted.model_dump(exclude={"items"}),
-        image_path=image_path,
+        image_paths=image_paths,
         items=[ReceiptItem(**item.model_dump()) for item in extracted.items],
     )

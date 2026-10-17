@@ -7,20 +7,20 @@ DB_URL = "postgresql+psycopg://user:pass@localhost:5432/tally"
 
 
 def test_stub_returns_a_receipt_with_items() -> None:
-    receipt = StubExtractor().extract(b"any image bytes")
+    receipt = StubExtractor().extract([b"any image bytes"])
 
     assert isinstance(receipt, ExtractedReceipt)
     assert receipt.items
 
 
-def test_stub_ignores_the_image() -> None:
+def test_stub_ignores_the_photos() -> None:
     extractor = StubExtractor()
 
-    assert extractor.extract(b"first") == extractor.extract(b"second")
+    assert extractor.extract([b"first"]) == extractor.extract([b"second", b"third"])
 
 
 def test_stub_receipt_is_internally_consistent() -> None:
-    receipt = StubExtractor().extract(b"")
+    receipt = StubExtractor().extract([])
 
     items_total = sum(item.total_price - item.discount for item in receipt.items)
 
