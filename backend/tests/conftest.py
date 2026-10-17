@@ -25,9 +25,14 @@ def alembic_config(connection: Connection) -> Config:
 
 
 @pytest.fixture(scope="session")
-def engine() -> Iterator[Engine]:
+def database_url() -> str:
+    return TEST_DATABASE_URL
+
+
+@pytest.fixture(scope="session")
+def engine(database_url: str) -> Iterator[Engine]:
     """Engine for the test database, with the schema built by the real migrations."""
-    engine = create_engine(TEST_DATABASE_URL)
+    engine = create_engine(database_url)
     with engine.begin() as connection:
         # Start from an empty schema so leftovers from an aborted run cannot leak in.
         connection.execute(text("DROP SCHEMA public CASCADE"))
