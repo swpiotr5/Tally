@@ -1,16 +1,34 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 
-import { ApiError, uploadReceipt } from '../api'
+import { ApiError, missingReceiptFields, uploadReceipt } from '../api'
 import { BackLink } from '../components/BackLink'
 import { Banner } from '../components/Banner'
-import { CameraIcon, ImageIcon, PaperIcon, ScanIcon, SunIcon } from '../components/icons'
+import {
+  CameraIcon,
+  CloseIcon,
+  ImageIcon,
+  PaperIcon,
+  PlusIcon,
+  ScanIcon,
+  SunIcon,
+} from '../components/icons'
 import styles from './UploadPage.module.css'
+
+// A long receipt is photographed in parts; the API takes at most this many photos.
+const MAX_PHOTOS = 5
+
+interface Photo {
+  // A counter, not crypto.randomUUID(): that needs HTTPS, and the phone uses plain HTTP on the LAN.
+  id: number
+  file: File
+}
 
 export function UploadPage() {
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [image, setImage] = useState<File | null>(null)
+  const nextId = useRef(0)
+  const [photos, setPhotos] = useState<Photo[]>([])
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -19,37 +37,46 @@ export function UploadPage() {
     inputRef.current?.click()
   }
 
-  function choose(file: File | undefined) {
-    if (!file) {
-      return
-    }
+  function addPhotos(files: Iterable<File>) {
+    const chosen = Array.from(files)
     // The picker only offers images; dropped files can be anything.
-    if (!file.type.startsWith('image/')) {
+    const images = chosen.filter((file) => file.type.startsWith('image/'))
+    const room = MAX_PHOTOS - photos.length
+    if (images.length < chosen.length) {
       setError('To nie jest zdjęcie. Wybierz plik JPEG, PNG, WebP lub HEIC.')
-      return
+    } else if (images.length > room) {
+      setError(`Jeden paragon może mieć najwyżej ${MAX_PHOTOS} zdjęć.`)
+    } else {
+      setError(null)
     }
+    const added = images.slice(0, room).map((file) => ({ id: nextId.current++, file }))
+    setPhotos((current) => [...current, ...added])
+  }
+
+  function removePhoto(id: number) {
+    setPhotos((current) => current.filter((photo) => photo.id !== id))
     setError(null)
-    setImage(file)
   }
 
   function handleDrop(event: DragEvent<HTMLElement>) {
     event.preventDefault()
     setDragging(false)
-    choose(event.dataTransfer.files[0])
+    addPhotos(event.dataTransfer.files)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!image) {
+    if (photos.length === 0) {
       return
     }
     setUploading(true)
     setError(null)
     try {
-      const receipt = await uploadReceipt(image)
+      const receipt = await uploadReceipt(photos.map((photo) => photo.file))
       // Replace the upload page in history, so "back" from the result goes to the list.
       await navigate(`/receipts/${receipt.id}`, { replace: true, state: { justUploaded: true } })
     } catch (err) {
+      // The photos stay, so the user can add the missing part and send them again.
       setError(uploadErrorMessage(err))
       setUploading(false)
     }
@@ -70,21 +97,57 @@ export function UploadPage() {
           ref={inputRef}
           type="file"
           accept="image/*"
-          aria-label="Zdjęcie paragonu"
+          multiple
+          aria-label="Zdjęcia paragonu"
           className="visually-hidden"
           tabIndex={-1}
           onChange={(event) => {
-            choose(event.target.files?.[0])
-            // Allow picking the same file again after "change photo".
+            addPhotos(event.target.files ?? [])
+            // Allow picking the same file again.
             event.target.value = ''
           }}
         />
 
-        {image ? (
+        {photos.length > 0 ? (
           <>
-            <div className={styles.preview} data-scanning={uploading}>
-              <ImagePreview key={`${image.name}-${image.size}-${image.lastModified}`} file={image} />
+            <div className={styles.photos} data-count={photos.length} data-scanning={uploading}>
+              {photos.map((photo, index) => (
+                <figure key={photo.id} className={styles.photo}>
+                  <PhotoPreview file={photo.file} label={`Zdjęcie ${index + 1} paragonu`} />
+                  {photos.length > 1 && (
+                    <span className={styles.photoNumber} aria-hidden="true">
+                      {index + 1}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className={styles.removePhoto}
+                    aria-label={`Usuń zdjęcie ${index + 1}`}
+                    disabled={uploading}
+                    onClick={() => removePhoto(photo.id)}
+                  >
+                    <CloseIcon />
+                  </button>
+                </figure>
+              ))}
+              {photos.length < MAX_PHOTOS && (
+                <button
+                  type="button"
+                  className={styles.addPhoto}
+                  disabled={uploading}
+                  onClick={openPicker}
+                >
+                  <PlusIcon />
+                  Dodaj dalszą część paragonu
+                </button>
+              )}
             </div>
+            {photos.length === 1 && !uploading && (
+              <p className={styles.hint}>
+                Długi paragon? Zrób kolejne zdjęcia od góry do dołu, tak żeby zachodziły na siebie
+                o kilka linii.
+              </p>
+            )}
             {error && <Banner tone="danger">{error}</Banner>}
             <button
               type="submit"
@@ -103,14 +166,6 @@ export function UploadPage() {
                   Odczytaj paragon
                 </>
               )}
-            </button>
-            <button
-              type="button"
-              className="button button-secondary button-block"
-              disabled={uploading}
-              onClick={openPicker}
-            >
-              Zmień zdjęcie
             </button>
           </>
         ) : (
@@ -159,7 +214,7 @@ export function UploadPage() {
   )
 }
 
-function ImagePreview({ file }: { file: File }) {
+function PhotoPreview({ file, label }: { file: File; label: string }) {
   const imageRef = useRef<HTMLImageElement>(null)
   const [failed, setFailed] = useState(false)
 
@@ -175,17 +230,23 @@ function ImagePreview({ file }: { file: File }) {
   if (failed) {
     // E.g. HEIC outside Safari: the browser cannot show it, but the upload still works.
     return (
-      <div className={styles.previewFallback}>
+      <div className={styles.previewFallback} role="img" aria-label={label}>
         <ImageIcon />
         <span className={styles.fileName}>{file.name}</span>
         <span>Podgląd niedostępny, ale zdjęcie można wysłać.</span>
       </div>
     )
   }
-  return <img ref={imageRef} alt="Podgląd zdjęcia paragonu" onError={() => setFailed(true)} />
+  return <img ref={imageRef} alt={label} onError={() => setFailed(true)} />
 }
 
 function uploadErrorMessage(error: unknown): string {
+  const missing = missingReceiptFields(error)
+  if (missing) {
+    const what =
+      missing.length > 1 ? 'daty ani sumy' : missing[0] === 'total' ? 'sumy' : 'daty'
+    return `Na zdjęciach nie widać ${what} paragonu. Dodaj zdjęcie dołu paragonu i spróbuj ponownie.`
+  }
   if (!(error instanceof ApiError)) {
     return 'Brak połączenia z serwerem. Sprawdź sieć i spróbuj ponownie.'
   }

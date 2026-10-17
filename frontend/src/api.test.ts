@@ -5,6 +5,7 @@ import {
   deleteReceiptItem,
   getReceipt,
   getReceipts,
+  missingReceiptFields,
   updateReceipt,
   updateReceiptItem,
   uploadReceipt,
@@ -42,18 +43,37 @@ describe('api', () => {
     await expect(getReceipts()).rejects.toMatchObject({ status: 502, message: 'Bad Gateway' })
   })
 
-  it('uploads the image as multipart form data', async () => {
+  it('uploads the photos as multipart form data, in order', async () => {
     const fetchMock = mockFetch(() => jsonResponse(receipt, 201))
-    const image = photo()
+    const top = photo('top.jpg')
+    const bottom = photo('bottom.jpg')
 
-    await expect(uploadReceipt(image)).resolves.toEqual(receipt)
+    await expect(uploadReceipt([top, bottom])).resolves.toEqual(receipt)
 
     const [url, init] = fetchMock.mock.calls[0]
     const body = init?.body
     expect(url).toBe('/api/receipts')
     expect(init?.method).toBe('POST')
     expect(body).toBeInstanceOf(FormData)
-    expect((body as FormData).get('file')).toBe(image)
+    expect((body as FormData).getAll('files')).toEqual([top, bottom])
+  })
+
+  it('keeps a structured error detail and uses its message', async () => {
+    const detail = { code: 'incomplete_receipt', missing: ['total'], message: 'No total.' }
+    mockFetch(() => jsonResponse({ detail }, 422))
+
+    const error = await uploadReceipt([photo()]).catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({ status: 422, message: 'No total.', detail })
+    expect(missingReceiptFields(error)).toEqual(['total'])
+  })
+
+  it('reports no missing fields for other errors', () => {
+    expect(missingReceiptFields(new ApiError(422, 'Invalid', [{ msg: 'field required' }]))).toBe(
+      null,
+    )
+    expect(missingReceiptFields(new ApiError(502, 'Bad gateway'))).toBe(null)
+    expect(missingReceiptFields(new TypeError('Failed to fetch'))).toBe(null)
   })
 
   it('sends item changes as a JSON PATCH', async () => {

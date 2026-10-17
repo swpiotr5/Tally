@@ -51,11 +51,14 @@ export interface Receipt {
 /** The API answered with an error status. */
 export class ApiError extends Error {
   readonly status: number
+  /** The `detail` of the error body: a message, or an object with a machine-readable code. */
+  readonly detail: unknown
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail: unknown = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.detail = detail
   }
 }
 
@@ -65,7 +68,8 @@ const API_BASE = '/api'
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, init)
   if (!response.ok) {
-    throw new ApiError(response.status, await errorMessage(response))
+    const detail = await errorDetail(response)
+    throw new ApiError(response.status, errorMessage(response, detail), detail)
   }
   if (response.status === 204) {
     return undefined as T
@@ -77,16 +81,45 @@ function jsonRequest(method: string, body: unknown): RequestInit {
   return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
 }
 
-async function errorMessage(response: Response): Promise<string> {
+async function errorDetail(response: Response): Promise<unknown> {
   try {
     const body: unknown = await response.json()
-    if (body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string') {
-      return body.detail
-    }
+    return body && typeof body === 'object' && 'detail' in body ? body.detail : null
   } catch {
-    // Not JSON (e.g. an error page from a proxy); fall back to the status text.
+    return null // Not JSON, e.g. an error page from a proxy.
+  }
+}
+
+function errorMessage(response: Response, detail: unknown): string {
+  if (typeof detail === 'string') {
+    return detail
+  }
+  if (detail && typeof detail === 'object' && 'message' in detail) {
+    return String(detail.message)
   }
   return response.statusText || `HTTP ${response.status}`
+}
+
+/**
+ * The fields ("purchase_date", "total") that the photos did not show, when the API refused
+ * a receipt as incomplete; null for any other error.
+ */
+export function missingReceiptFields(error: unknown): string[] | null {
+  if (!(error instanceof ApiError) || error.status !== 422) {
+    return null
+  }
+  const { detail } = error
+  if (
+    detail &&
+    typeof detail === 'object' &&
+    'code' in detail &&
+    detail.code === 'incomplete_receipt' &&
+    'missing' in detail &&
+    Array.isArray(detail.missing)
+  ) {
+    return detail.missing.map(String)
+  }
+  return null
 }
 
 export function getReceipts(signal?: AbortSignal): Promise<ReceiptSummary[]> {
@@ -97,9 +130,12 @@ export function getReceipt(id: number, signal?: AbortSignal): Promise<Receipt> {
   return request(`/receipts/${id}`, { signal })
 }
 
-export function uploadReceipt(image: File): Promise<Receipt> {
+/** Upload the photos of one receipt; a long receipt comes in parts, top to bottom. */
+export function uploadReceipt(photos: File[]): Promise<Receipt> {
   const body = new FormData()
-  body.append('file', image)
+  for (const photo of photos) {
+    body.append('files', photo)
+  }
   return request('/receipts', { method: 'POST', body })
 }
 
