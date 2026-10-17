@@ -37,6 +37,21 @@ services:
       timeout: 3s
       retries: 5
 
+  frontend:
+    build: ./frontend
+    environment:
+      API_PROXY_TARGET: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      # Live code for hot reload. Dependencies, index.html and vite.config.ts come from the
+      # image: rebuild (docker compose up --build) after changing them.
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+
 volumes:
   db-data:
   uploads:
