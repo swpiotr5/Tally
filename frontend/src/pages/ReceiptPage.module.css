@@ -1,0 +1,150 @@
+.page {
+  display: grid;
+  gap: 12px;
+}
+
+.paper {
+  --rule: color-mix(in srgb, var(--text) 16%, transparent);
+  --rule-soft: color-mix(in srgb, var(--text) 8%, transparent);
+
+  position: relative;
+  margin: 4px 0 20px;
+  padding: 26px 20px 22px;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--paper);
+  filter: var(--paper-shadow);
+}
+
+/* Torn-off zigzag edge, echoing the logo. The filter above also shadows the teeth. */
+.paper::after {
+  content: '';
+  position: absolute;
+  inset: 100% 0 auto;
+  height: 12px;
+  background: var(--paper);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12'%3E%3Cpath d='M0 0h24L12 12z'/%3E%3C/svg%3E")
+    0 0 / 24px 12px round no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12'%3E%3Cpath d='M0 0h24L12 12z'/%3E%3C/svg%3E")
+    0 0 / 24px 12px round no-repeat;
+}
+
+.header {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding-bottom: 18px;
+  border-bottom: 2px dashed var(--rule);
+  text-align: center;
+}
+
+.store {
+  font-size: 1.5rem;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.nip {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.date {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.items {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: 8px;
+  padding: 14px 0;
+}
+
+.item + .item {
+  border-top: 1px solid var(--rule-soft);
+}
+
+.itemMain {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.itemName {
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.itemPrice {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.itemDetails {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.itemQty {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.discount {
+  display: flex;
+  justify-content: space-between;
+  color: var(--success-text);
+  font-size: 0.875rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.noItems {
+  padding: 20px 0;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.totalRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 2px dashed var(--rule);
+}
+
+.totalLabel {
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.total {
+  font-size: 1.625rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.meta {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+}

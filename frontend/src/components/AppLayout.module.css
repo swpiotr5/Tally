@@ -1,0 +1,72 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: calc(env(safe-area-inset-top) + 10px) var(--gutter) 10px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+}
+
+.headerInner {
+  max-width: var(--page-width);
+  margin: 0 auto;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 12px;
+}
+
+.brand img {
+  display: block;
+}
+
+.wordmark {
+  color: var(--brand);
+  font-size: 1.625rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: calc(var(--page-width) + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 8px var(--gutter) calc(env(safe-area-inset-bottom) + 32px);
+}
+
+/* Thin bar at the top while a route loader runs; delayed so fast loads do not flash. */
+.progress {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 20;
+  height: 3px;
+  background: var(--brand);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+  pointer-events: none;
+}
+
+.progress[data-active='true'] {
+  opacity: 1;
+  transition: opacity 0.2s ease 0.15s;
+  animation: progress 2s cubic-bezier(0.1, 0.7, 0.3, 1) 0.15s forwards;
+}
+
+@keyframes progress {
+  to {
+    transform: scaleX(0.9);
+  }
+}
